@@ -16,6 +16,13 @@
 #import "RCTInvalidating.h"
 #import "RCTJavaScriptExecutor.h"
 
+
+//
+//
+// 这个RCTBridg是对外的接口
+//
+//
+
 @class RCTBridge;
 @class RCTEventDispatcher;
 

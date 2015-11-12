@@ -396,8 +396,8 @@ RCT_EXTERN NSArray<Class> *RCTGetModuleClasses(void);
 //  将模块的配置串, 加起来,然后序列化
 //  然后根据模块对象是否符合RCTFrameUpdateObserver的协议  
 //  把它们的moduleData 加到 _frameUpdateObservers
-//  并给他们设置一个pauseCallback函数, 内容是通知bridge更新下暂停状态.
-//  (这个在下一帧遍历 检查 也可以设置的... 反正目前是这样实现)
+//  并给他们设置一个pauseCallback函数(这个猜想在pause时会被调用), 内容是通知bridge更新下暂停状态.
+//  (其实这个在下一帧遍历 检查时 也可以直白的设置的... 反正目前是这样实现 可能是更有道理吧)
 // 
 - (NSString *)moduleConfig
 {
@@ -468,7 +468,6 @@ RCT_EXTERN NSArray<Class> *RCTGetModuleClasses(void);
   // self.modules就是 _moduleNames的替代
   // 查看是否有RCTSourceCode 模块,如果有 设置 scriptURL,scriptData
   // 
-  // 
   RCTSourceCode *sourceCodeModule = self.modules[RCTBridgeModuleNameForClass([RCTSourceCode class])];
   sourceCodeModule.scriptURL = self.bundleURL;
   sourceCodeModule.scriptData = sourceCode;
@@ -486,10 +485,12 @@ RCT_EXTERN NSArray<Class> *RCTGetModuleClasses(void);
       return;
     }
 
+    //开始 注册 _jsDisplayLink的调用了.
     // Register the display link to start sending js calls after everything is setup
     NSRunLoop *targetRunLoop = [_javaScriptExecutor isKindOfClass:[RCTContextExecutor class]] ? [NSRunLoop currentRunLoop] : [NSRunLoop mainRunLoop];
     [_jsDisplayLink addToRunLoop:targetRunLoop forMode:NSRunLoopCommonModes];
 
+    // 通知执行完毕,放在主线程里去执行
     // Perform the state update and notification on the main thread, so we can't run into
     // timing issues with RCTRootView
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -502,6 +503,9 @@ RCT_EXTERN NSArray<Class> *RCTGetModuleClasses(void);
   }];
 }
 
+//
+// 执行完毕后, 把之前暂缓的那些call都拿出来调用一下.
+//
 - (void)didFinishLoading
 {
   _loading = NO;
@@ -534,6 +538,10 @@ RCT_NOT_IMPLEMENTED(- (instancetype)initWithBundleURL:(__unused NSURL *)bundleUR
                     moduleProvider:(__unused RCTBridgeModuleProviderBlock)block
                     launchOptions:(__unused NSDictionary *)launchOptions)
 
+
+
+//
+// 这两个bridge的关系得好好清理一下..TODO 这里是避免  RCTBridge和RCTBatchedBridge循环调用
 /**
  * Prevent super from calling setUp (that'd create another batchedBridge)
  */
@@ -550,6 +558,8 @@ RCT_NOT_IMPLEMENTED(- (instancetype)initWithBundleURL:(__unused NSURL *)bundleUR
   return _parentBridge.executorClass ?: [RCTContextExecutor class];
 }
 
+
+// 没有地方调用这个函数暂时
 - (void)setExecutorClass:(Class)executorClass
 {
   RCTAssertMainThread();
@@ -592,7 +602,11 @@ RCT_NOT_IMPLEMENTED(- (instancetype)initWithBundleURL:(__unused NSURL *)bundleUR
 }
 
 #pragma mark - RCTInvalidating
-
+//
+// 
+//  注销bridge, 
+//  对外bridge对象 reload 和 析构时候调用  impl的invalidate
+//
 - (void)invalidate
 {
   if (!self.valid) {
@@ -607,6 +621,7 @@ RCT_NOT_IMPLEMENTED(- (instancetype)initWithBundleURL:(__unused NSURL *)bundleUR
     [RCTBridge setCurrentBridge:nil];
   }
 
+  //依次调用模块的invalidate()
   // Invalidate modules
   dispatch_group_t group = dispatch_group_create();
   for (RCTModuleData *moduleData in _moduleDataByID) {
@@ -641,6 +656,9 @@ RCT_NOT_IMPLEMENTED(- (instancetype)initWithBundleURL:(__unused NSURL *)bundleUR
   });
 }
 
+//
+// RCTLog.logIfNoNativeHook
+//
 - (void)logMessage:(NSString *)message level:(NSString *)level
 {
   if (RCT_DEBUG) {
@@ -653,6 +671,9 @@ RCT_NOT_IMPLEMENTED(- (instancetype)initWithBundleURL:(__unused NSURL *)bundleUR
 
 #pragma mark - RCTBridge methods
 
+//
+// 执行JS调用  实际是通过 _invokeAndProcessModule来执行 BatchedBridge模块的callFunctionReturnFlushedQueue
+//
 /**
  * Public. Can be invoked from any thread.
  */
@@ -677,7 +698,9 @@ RCT_NOT_IMPLEMENTED(- (instancetype)initWithBundleURL:(__unused NSURL *)bundleUR
                                    method:@"callFunctionReturnFlushedQueue"
                                 arguments:@[@"JSTimersExecution", @"callTimers", @[@[timer]]]];
   };
-
+  //TODO
+  //executeAsyncBlockOnJavaScriptQueue executeBlockOnJavaScriptQueue 区别
+  //
   if ([_javaScriptExecutor respondsToSelector:@selector(executeAsyncBlockOnJavaScriptQueue:)]) {
     [_javaScriptExecutor executeAsyncBlockOnJavaScriptQueue:block];
   } else {
@@ -685,6 +708,11 @@ RCT_NOT_IMPLEMENTED(- (instancetype)initWithBundleURL:(__unused NSURL *)bundleUR
   }
 }
 
+//
+//  交给_javaScriptExecutor的executeApplicationScript执行
+//  然后  再调用 _javaScriptExecutor的executeJSCall执行 js代码的 BatchedBridge.flushedQueue
+//  然后回调 调用者的callback
+//
 - (void)enqueueApplicationScript:(NSData *)script
                              url:(NSURL *)url
                       onComplete:(RCTJavaScriptCompleteBlock)onComplete
@@ -725,6 +753,10 @@ RCT_NOT_IMPLEMENTED(- (instancetype)initWithBundleURL:(__unused NSURL *)bundleUR
  * Called by enqueueJSCall from any thread, or from _immediatelyCallTimer,
  * on the JS thread, but only in non-batched mode.
  */
+ //
+ // 交给_javaScriptExecutor放在js执行线程上 执行 _actuallyInvokeAndProcessModule
+ //  如果还在加载期 则放到 _pendingCalls里.
+ //
 - (void)_invokeAndProcessModule:(NSString *)module method:(NSString *)method arguments:(NSArray *)args
 {
   /**
@@ -749,7 +781,9 @@ RCT_NOT_IMPLEMENTED(- (instancetype)initWithBundleURL:(__unused NSURL *)bundleUR
     }
   }];
 }
-
+//  TODO js线程 和 主线程的分工设计 还需要好好整理下
+//  实际就是执行_javaScriptExecutor的executeJSCall,
+//
 - (void)_actuallyInvokeAndProcessModule:(NSString *)module
                                  method:(NSString *)method
                               arguments:(NSArray *)args
@@ -778,6 +812,10 @@ RCT_NOT_IMPLEMENTED(- (instancetype)initWithBundleURL:(__unused NSURL *)bundleUR
 
 #pragma mark - Payload Processing
 
+//
+// FixME 这个函数干啥的啊.
+//
+//
 - (void)handleBuffer:(id)buffer batchEnded:(BOOL)batchEnded
 {
   RCTAssertJSThread();
@@ -796,10 +834,14 @@ RCT_NOT_IMPLEMENTED(- (instancetype)initWithBundleURL:(__unused NSURL *)bundleUR
   }
 }
 
+//
+//RCTConvert是用来转换json和本地对象的
+//
+//
 - (void)handleBuffer:(NSArray<NSArray *> *)buffer
 {
   NSArray<NSArray *> *requestsArray = [RCTConvert NSArrayArray:buffer];
-
+  // ???  这个数组  0, 1, 2 分别是模块Id, 方法id ,参数串 
   if (RCT_DEBUG && requestsArray.count <= RCTBridgeFieldParamss) {
     RCTLogError(@"Buffer should contain at least %tu sub-arrays. Only found %tu",
                 RCTBridgeFieldParamss + 1, requestsArray.count);
@@ -825,7 +867,11 @@ RCT_NOT_IMPLEMENTED(- (instancetype)initWithBundleURL:(__unused NSURL *)bundleUR
       // verify that class has been registered
       (void)_modulesByName[moduleData.name];
     }
+    //TODO
+    //这个queue是何处赋值的.
     dispatch_queue_t queue = moduleData.queue;
+    //buckets每个模块的queue为键, 值为该queue的模块id组成的set 
+    // buckets 是 queue => set{}
     NSMutableOrderedSet<NSNumber *> *set = [buckets objectForKey:queue];
     if (!set) {
       set = [NSMutableOrderedSet new];
@@ -834,6 +880,12 @@ RCT_NOT_IMPLEMENTED(- (instancetype)initWithBundleURL:(__unused NSURL *)bundleUR
     [set addObject:@(i)];
   }];
 
+  // 然后遍历这些queue,  执行 _handleRequestNumber 传递这些参数
+  //    用 autoreleasepool 是因为? 怕产生太多了
+  // 
+  //  如果就是RCTJSThread  用_javaScriptExecutor的executeBlockOnJavaScriptQueue执行
+  //  否则 dispatch_async(queue  执行
+  //
   for (dispatch_queue_t queue in buckets) {
     RCTProfileBeginFlowEvent();
 
@@ -869,6 +921,9 @@ RCT_NOT_IMPLEMENTED(- (instancetype)initWithBundleURL:(__unused NSURL *)bundleUR
   }
 }
 
+//
+//
+//
 - (void)batchDidComplete
 {
   // TODO: batchDidComplete is only used by RCTUIManager - can we eliminate this special case?
@@ -880,7 +935,9 @@ RCT_NOT_IMPLEMENTED(- (instancetype)initWithBundleURL:(__unused NSURL *)bundleUR
     }
   }
 }
-
+//
+// 执行 RCTBridgeMethod的invokeWithBridge
+//
 - (BOOL)_handleRequestNumber:(NSUInteger)i
                     moduleID:(NSUInteger)moduleID
                     methodID:(NSUInteger)methodID
@@ -934,6 +991,9 @@ RCT_NOT_IMPLEMENTED(- (instancetype)initWithBundleURL:(__unused NSURL *)bundleUR
   return YES;
 }
 
+//
+// 每帧注册的回调, 调用模块的didUpdateFrame
+//
 - (void)_jsThreadUpdate:(CADisplayLink *)displayLink
 {
   RCTAssertJSThread();

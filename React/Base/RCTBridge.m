@@ -51,6 +51,8 @@ NSArray<Class> *RCTGetModuleClasses(void)
  * Register the given class as a bridge module. All modules must be registered
  * prior to the first bridge initialization.
  */
+ // 就是简单的放到RCTModuleClasses里
+ //
 void RCTRegisterModule(Class);
 void RCTRegisterModule(Class moduleClass)
 {
@@ -70,6 +72,9 @@ void RCTRegisterModule(Class moduleClass)
 /**
  * This function returns the module name for a given class.
  */
+ // 优先用模块自己的moduleName方法,否则用NSStringFromClass,并且替换RK为RCT
+ //
+ //
 NSString *RCTBridgeModuleNameForClass(Class cls)
 {
 #if RCT_DEV
@@ -89,6 +94,9 @@ NSString *RCTBridgeModuleNameForClass(Class cls)
 /**
  * Check if class has been registered
  */
+ //
+ //注册的时候 会把这个函数 绑到class上.
+ //
 BOOL RCTBridgeModuleClassIsRegistered(Class);
 BOOL RCTBridgeModuleClassIsRegistered(Class cls)
 {
@@ -107,6 +115,9 @@ dispatch_queue_t RCTJSThread;
     // Set up JS thread
     RCTJSThread = (id)kCFNull;
 
+//TODO
+//如果不是debug就不做下面这些工作了 说明可有可无?
+//
 #if RCT_DEBUG
 
     // Set up module classes
@@ -205,7 +216,9 @@ RCT_NOT_IMPLEMENTED(- (instancetype)init)
   [[NSNotificationCenter defaultCenter] removeObserver:self];
   [self invalidate];
 }
-
+// 监听 RCTReloadNotification
+// 监视 cmd+r, 产生RCTReloadNotification
+//
 - (void)bindKeys
 {
   RCTAssertMainThread();
@@ -299,6 +312,9 @@ RCT_NOT_IMPLEMENTED(- (instancetype)init)
   [self.batchedBridge enqueueJSCall:moduleDotMethod args:args];
 }
 
+//
+// 防止call到这个外部的bridge接口上了.
+//
 RCT_INNER_BRIDGE_ONLY(_invokeAndProcessModule:(__unused NSString *)module
                       method:(__unused NSString *)method
                       arguments:(__unused NSArray *)args);
