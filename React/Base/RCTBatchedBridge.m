@@ -137,8 +137,8 @@ RCT_EXTERN NSArray<Class> *RCTGetModuleClasses(void);
 
 //
 //  异步加载模块  加载模块代码 
+//  injectJSONConfiguration把oc这边的模块定义创建到js那边
 //  最后开始执行代码
-//
 //
 - (void)start
 {
@@ -275,6 +275,7 @@ RCT_EXTERN NSArray<Class> *RCTGetModuleClasses(void);
     // Allow testing without a script
     dispatch_async(dispatch_get_main_queue(), ^{
       [self didFinishLoading];
+      //会触发RctRootView执行runApplication 进而执行js全局的AppRegistry.runApplication
       [[NSNotificationCenter defaultCenter] postNotificationName:RCTJavaScriptDidLoadNotification
                                                           object:_parentBridge
                                                         userInfo:@{ @"bridge": self }];
@@ -392,8 +393,10 @@ RCT_EXTERN NSArray<Class> *RCTGetModuleClasses(void);
   [_javaScriptExecutor setUp];
 }
 
+
 //
-//  将模块的配置串, 加起来,然后序列化
+//  将模块的配置串, 这个串的内容是模块的名字和它的常量属性和所有的方法
+//   加起来,然后序列化
 //  然后根据模块对象是否符合RCTFrameUpdateObserver的协议  
 //  把它们的moduleData 加到 _frameUpdateObservers
 //  并给他们设置一个pauseCallback函数(这个猜想在pause时会被调用), 内容是通知bridge更新下暂停状态.
@@ -495,7 +498,9 @@ RCT_EXTERN NSArray<Class> *RCTGetModuleClasses(void);
     // timing issues with RCTRootView
     dispatch_async(dispatch_get_main_queue(), ^{
       [self didFinishLoading];
-
+      //
+      // RCTJavaScriptDidLoadNotification 
+      // 
       [[NSNotificationCenter defaultCenter] postNotificationName:RCTJavaScriptDidLoadNotification
                                                           object:_parentBridge
                                                         userInfo:@{ @"bridge": self }];

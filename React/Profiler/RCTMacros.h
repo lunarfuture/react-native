@@ -7,6 +7,9 @@
  * of patent rights can be found in the PATENTS file in the same directory.
  */
 
+//
+//  这样写 目的是为了 支持A,B也可以是宏. TODO 找出例子 理解一下.
+//
 #define _CONCAT(A, B) A##B
 #define CONCAT(A, B) _CONCAT(A, B)
 

@@ -580,6 +580,9 @@ static void RCTInstallJSCProfiler(RCTBridge *bridge, JSContextRef context)
   block();
 }
 
+//
+// 给js层添加 全局模块, script是个描述模块的串
+//
 - (void)injectJSONText:(NSString *)script
    asGlobalObjectNamed:(NSString *)objectName
               callback:(RCTJavaScriptCompleteBlock)onComplete
