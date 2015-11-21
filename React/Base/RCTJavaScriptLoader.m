@@ -19,6 +19,9 @@
 
 RCT_NOT_IMPLEMENTED(- (instancetype)init)
 
+// 
+// 这个函数没什么意思 就是得到 文件或者网络上的文件内容 然后调用onComplete
+//
 + (void)loadBundleAtURL:(NSURL *)scriptURL onComplete:(RCTSourceLoadBlock)onComplete
 {
   // Sanitize the script URL

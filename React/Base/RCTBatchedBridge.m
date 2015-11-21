@@ -149,13 +149,13 @@ RCT_EXTERN NSArray<Class> *RCTGetModuleClasses(void);
   __weak RCTBatchedBridge *weakSelf = self;
   __block NSData *sourceCode;
   // 线程一.  加载代码, 需要在主线程上执行
+  // 执行完后 脚本内容在sourceCode里
   [self loadSource:^(NSError *error, NSData *source) {
     if (error) {
       dispatch_async(dispatch_get_main_queue(), ^{
         [weakSelf stopLoadingWithError:error];
       });
-    }
-
+    } 
     sourceCode = source;
     dispatch_group_leave(initModulesAndLoadSource);
   }];
@@ -207,7 +207,8 @@ RCT_EXTERN NSArray<Class> *RCTGetModuleClasses(void);
       dispatch_group_leave(initModulesAndLoadSource);
     });
   });
-
+  //  执行sourceCode
+  //
   dispatch_group_notify(initModulesAndLoadSource, dispatch_get_main_queue(), ^{
     RCTBatchedBridge *strongSelf = weakSelf;
     if (sourceCode && strongSelf.loading) {
@@ -227,7 +228,8 @@ RCT_EXTERN NSArray<Class> *RCTGetModuleClasses(void);
   RCTPerformanceLoggerStart(RCTPLScriptDownload);
   NSUInteger cookie = RCTProfileBeginAsyncEvent(0, @"JavaScript download", nil);
 
-  //先设置一个内部的代码加载完毕的回调, 它最后再回调参数来的 _onSourceLoad
+  //先设置一个内部的代码加载完毕的回调,  拿到脚本内容后回调参数来的 _onSourceLoad 函数
+  // 
   RCTSourceLoadBlock onSourceLoad = ^(NSError *error, NSData *source) {
     RCTProfileEndAsyncEvent(0, @"init,download", cookie, @"JavaScript download", nil);
     RCTPerformanceLoggerEnd(RCTPLScriptDownload);
@@ -265,17 +267,23 @@ RCT_EXTERN NSArray<Class> *RCTGetModuleClasses(void);
   //  可以用来截获 如何加载代码
   //
   if ([self.delegate respondsToSelector:@selector(loadSourceForBridge:withBlock:)]) {
+    //
+    // 一般都是走这条路径, 看用户的appDelegate怎么写的, 一般没什么要求的话就和下面的elseif 流程代码一样
+    //
     [self.delegate loadSourceForBridge:_parentBridge withBlock:onSourceLoad];
   } else if (self.bundleURL) {
     // 用我们自己的加载器 去加载代码
     [RCTJavaScriptLoader loadBundleAtURL:self.bundleURL onComplete:onSourceLoad];
   } else {
+    // 这条路径 不会进来.
     // 如果没有self.bundleURL的话 简单回调相关函数.
     // 并通知RCTJavaScriptDidLoadNotification, 这个是在函数执行完毕 通知的.
     // Allow testing without a script
     dispatch_async(dispatch_get_main_queue(), ^{
       [self didFinishLoading];
-      //会触发RctRootView执行runApplication 进而执行js全局的AppRegistry.runApplication
+      //RCTJavaScriptDidLoadNotification 这个事件会触发
+      //RctRootView执行runApplication 进而执行js全局的AppRegistry.runApplication
+      //但这条路径 不会进来
       [[NSNotificationCenter defaultCenter] postNotificationName:RCTJavaScriptDidLoadNotification
                                                           object:_parentBridge
                                                         userInfo:@{ @"bridge": self }];
@@ -445,7 +453,9 @@ RCT_EXTERN NSArray<Class> *RCTGetModuleClasses(void);
 }
 
 //
-// 调用_javaScriptExecutor的injectJSONText
+// 调用_javaScriptExecutor的injectJSONText 执行js层  模块对象的注册工作
+//   __fbBatchedBridgeConfig 
+//
 //
 - (void)injectJSONConfiguration:(NSString *)configJSON
                      onComplete:(void (^)(NSError *))onComplete
@@ -468,7 +478,7 @@ RCT_EXTERN NSArray<Class> *RCTGetModuleClasses(void);
     return;
   }
   // 
-  // self.modules就是 _moduleNames的替代
+  // self.modules就是 _moduleNames的访问器
   // 查看是否有RCTSourceCode 模块,如果有 设置 scriptURL,scriptData
   // 
   RCTSourceCode *sourceCodeModule = self.modules[RCTBridgeModuleNameForClass([RCTSourceCode class])];
@@ -493,14 +503,16 @@ RCT_EXTERN NSArray<Class> *RCTGetModuleClasses(void);
     NSRunLoop *targetRunLoop = [_javaScriptExecutor isKindOfClass:[RCTContextExecutor class]] ? [NSRunLoop currentRunLoop] : [NSRunLoop mainRunLoop];
     [_jsDisplayLink addToRunLoop:targetRunLoop forMode:NSRunLoopCommonModes];
 
-    // 通知执行完毕,放在主线程里去执行
+    // 通知执行完毕 
     // Perform the state update and notification on the main thread, so we can't run into
     // timing issues with RCTRootView
     dispatch_async(dispatch_get_main_queue(), ^{
       [self didFinishLoading];
       //
-      // RCTJavaScriptDidLoadNotification 
-      // 
+      //  一般 用户自己写的js执行  都会调用 AppRegistry:registerComponent()
+      //   
+      // RCTJavaScriptDidLoadNotification 这个事件会触发
+      //RctRootView执行runApplication 进而执行js全局的AppRegistry.runApplication  
       [[NSNotificationCenter defaultCenter] postNotificationName:RCTJavaScriptDidLoadNotification
                                                           object:_parentBridge
                                                         userInfo:@{ @"bridge": self }];
@@ -676,6 +688,9 @@ RCT_NOT_IMPLEMENTED(- (instancetype)initWithBundleURL:(__unused NSURL *)bundleUR
 
 #pragma mark - RCTBridge methods
 
+
+//
+//  基本都是通过这个函数来调用的. 也有直接调用 _invokeAndProcessModule的
 //
 // 执行JS调用  实际是通过 _invokeAndProcessModule来执行 BatchedBridge模块的callFunctionReturnFlushedQueue
 //
@@ -714,8 +729,12 @@ RCT_NOT_IMPLEMENTED(- (instancetype)initWithBundleURL:(__unused NSURL *)bundleUR
 }
 
 //
-//  交给_javaScriptExecutor的executeApplicationScript执行
-//  然后  再调用 _javaScriptExecutor的executeJSCall执行 js代码的 BatchedBridge.flushedQueue
+//  这个函数 似乎 就启动时候 执行一次?
+//
+//  交给_javaScriptExecutor的executeApplicationScript执行 脚本代码
+//  执行完后 
+//  再调用 _javaScriptExecutor的executeJSCall执行 js代码的 BatchedBridge.flushedQueue
+//  然后调用 handleBuffer() 来执行oc模块的方法
 //  然后回调 调用者的callback
 //
 - (void)enqueueApplicationScript:(NSData *)script
@@ -725,6 +744,7 @@ RCT_NOT_IMPLEMENTED(- (instancetype)initWithBundleURL:(__unused NSURL *)bundleUR
   RCTAssert(onComplete != nil, @"onComplete block passed in should be non-nil");
 
   RCTProfileBeginFlowEvent();
+
   [_javaScriptExecutor executeApplicationScript:script sourceURL:url onComplete:^(NSError *scriptLoadError) {
     RCTProfileEndFlowEvent();
     RCTAssertJSThread();
@@ -872,8 +892,10 @@ RCT_NOT_IMPLEMENTED(- (instancetype)initWithBundleURL:(__unused NSURL *)bundleUR
       // verify that class has been registered
       (void)_modulesByName[moduleData.name];
     }
-    //TODO
-    //这个queue是何处赋值的.
+    //
+    //moduleData.queue 返回 methodQueue设置的queue 一般就是主线程
+    // 没设置的话, com.facebook.React.模块名
+    //
     dispatch_queue_t queue = moduleData.queue;
     //buckets每个模块的queue为键, 值为该queue的模块id组成的set 
     // buckets 是 queue => set{}
@@ -940,7 +962,8 @@ RCT_NOT_IMPLEMENTED(- (instancetype)initWithBundleURL:(__unused NSURL *)bundleUR
     }
   }
 }
-//
+//  
+//  执行js  回调我们oc的方法
 // 执行 RCTBridgeMethod的invokeWithBridge
 //
 - (BOOL)_handleRequestNumber:(NSUInteger)i

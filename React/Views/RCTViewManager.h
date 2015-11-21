@@ -23,6 +23,12 @@
 
 typedef void (^RCTViewManagerUIBlock)(RCTUIManager *uiManager, RCTSparseArray *viewRegistry);
 
+//
+//  作为一个父类, 它具体实现某个类型的view的 维护工作. 
+//  了解上 差很多 .  FIXME 
+//   似乎主要是和RCTShadowView打交道 维护虚拟DOM相关的.
+//
+//
 @interface RCTViewManager : NSObject <RCTBridgeModule>
 
 /**

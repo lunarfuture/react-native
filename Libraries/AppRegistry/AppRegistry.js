@@ -30,6 +30,10 @@ type AppConfig = {
   run?: Function;
 };
 
+
+
+
+
 /**
  * `AppRegistry` is the JS entry point to running all React Native apps.  App
  * root components should register themselves with
@@ -70,7 +74,25 @@ var AppRegistry = {
   getAppKeys: function(): Array<string> {
     return Object.keys(runnables);
   },
-
+  // 在RCTRootView.m里调用该js函数
+  //  NSDictionary *appParameters = @{
+  //   @"rootTag": _contentView.reactTag,
+  //   @"initialProps": _appProperties ?: @{},
+  // };
+  // __DEV__ 是oc层初始化时 全局注册进来的.
+  //  
+  //   runApplication 是以 用户appDelegatem RCTRootView创建时 传递的入口模块名
+  //   为参数调用 renderApplication()
+  //  最后执行个
+  // React.render(
+  //   <AppContainer
+  //     rootComponent={RootComponent}
+  //     initialProps={initialProps}
+  //     rootTag={rootTag} />,
+  //   rootTag
+  // );
+//    程序打包之前这些<>都是会被合理转换成createElement函数的调用. 真正执行的js是完全不含JSX语法的
+//
   runApplication: function(appKey: string, appParameters: any): void {
     console.log(
       'Running application "' + appKey + '" with appParams: ' +

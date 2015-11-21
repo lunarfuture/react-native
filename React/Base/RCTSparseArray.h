@@ -9,6 +9,10 @@
 
 #import <Foundation/Foundation.h>
 
+
+//
+ // 稀疏数组,  也就一个map, 多出来的细节再整理. TODO
+ //
 @interface RCTSparseArray : NSObject <NSCopying>
 
 - (instancetype)initWithCapacity:(NSUInteger)capacity NS_DESIGNATED_INITIALIZER;

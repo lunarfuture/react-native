@@ -55,6 +55,8 @@ class MessageQueue {
     this._callbackID = 0;
     this._lastFlush = 0;
 
+    //这3个方法, 永远用构造方法产生的this
+    // 基本都是 enqueueJS来调用的callFunctionReturnFlushedQueue
     [
       'invokeCallbackAndReturnFlushedQueue',
       'callFunctionReturnFlushedQueue',
@@ -75,6 +77,11 @@ class MessageQueue {
     );
   }
 
+  //
+  //  
+  //callFunctionReturnFlushedQueue
+  //
+  //
   /**
    * Public APIs
    */
@@ -112,10 +119,16 @@ class MessageQueue {
     BridgeProfiling.profile('JSTimersExecution.callImmediates()');
     guard(() => JSTimersExecution.callImmediates());
     BridgeProfiling.profileEnd();
-  }
-
+  } 
+  //
+  //创建一个promise
+  //    _callbacks 一次存2个分别是 onFail onSucc 
+  //    
+  //
   __nativeCall(module, method, params, onFail, onSucc) {
     if (onFail || onSucc) {
+      //
+      // 这里 没搞懂  似乎是在清理太多的旧debugInfo. TODO
       // eventually delete old debug info
       (this._callbackID > (1 << 5)) &&
         (this._debugInfo[this._callbackID >> 5] = null);
@@ -131,6 +144,14 @@ class MessageQueue {
     this._queue[PARAMS].push(params);
 
     var now = new Date().getTime();
+    //
+    // 时间足够了就flush一次
+    // 调用oc层  bridge的handleBuffer() 见RCTContextExecutor的setUp  
+    //  
+    //  oc层每次执行 成段的js代码 调用 会执行handleBuffer, 
+    //  参见Bridge.enqueueApplicationScript()
+    //  所以只有这里会调用一次 nativeFlushQueueImmediate, 其他时候不需要. 
+    //
     if (global.nativeFlushQueueImmediate &&
         now - this._lastFlush >= MIN_TIME_BETWEEN_FLUSHES_MS) {
       global.nativeFlushQueueImmediate(this._queue);
@@ -175,6 +196,9 @@ class MessageQueue {
         console.log('N->JS : <callback for ' + module + '.' + method + '>(' + JSON.stringify(args) + ')');
       }
     }
+    //
+    //  清理掉OnSucc, onError
+    //
     this._callbacks[cbID & ~1] = null;
     this._callbacks[cbID |  1] = null;
     callback.apply(null, args);
