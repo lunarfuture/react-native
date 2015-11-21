@@ -421,6 +421,12 @@ static void RCTInstallJSCProfiler(RCTBridge *bridge, JSContextRef context)
   [self invalidate];
 }
 
+//
+//  调用方 基本都是
+//   bridge的enqueueJSCall 或者直接的_invokeAndProcessModule
+//
+//
+
 - (void)executeJSCall:(NSString *)name
                method:(NSString *)method
             arguments:(NSArray *)arguments
@@ -553,6 +559,9 @@ static void RCTInstallJSCProfiler(RCTBridge *bridge, JSContextRef context)
     JSValueRef jsError = NULL;
     JSStringRef execJSString = JSStringCreateWithUTF8CString(nullTerminatedScript.bytes);
     JSStringRef jsURL = JSStringCreateWithCFString((__bridge CFStringRef)sourceURL.absoluteString);
+    //
+    // 这句是唯一执行js代码的语句.
+    //
     JSValueRef result = JSEvaluateScript(strongSelf->_context.ctx, execJSString, NULL, jsURL, 0, &jsError);
     JSStringRelease(jsURL);
     JSStringRelease(execJSString);
@@ -591,6 +600,9 @@ static void RCTInstallJSCProfiler(RCTBridge *bridge, JSContextRef context)
   block();
 }
 
+//
+// 给js层添加 全局模块, script是个描述模块的串
+//
 - (void)injectJSONText:(NSString *)script
    asGlobalObjectNamed:(NSString *)objectName
               callback:(RCTJavaScriptCompleteBlock)onComplete

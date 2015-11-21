@@ -13,15 +13,25 @@
 #import "RCTComponent.h"
 #import "RCTRootView.h"
 
+
+//
+//  这个RCTShadowView 每个view都有一个 
+//    专门用来布局的, 装布局属性的. 
+//  把很重的布局代码 挪开, 不要堆放在view里
+
+
 @class RCTSparseArray;
 
 typedef NS_ENUM(NSUInteger, RCTUpdateLifecycle) {
-  RCTUpdateLifecycleUninitialized = 0,
-  RCTUpdateLifecycleComputed,
-  RCTUpdateLifecycleDirtied,
+	RCTUpdateLifecycleUninitialized = 0,
+					RCTUpdateLifecycleComputed,
+					RCTUpdateLifecycleDirtied,
 };
 
 typedef void (^RCTApplierBlock)(NSDictionary<NSNumber *, UIView *> *viewRegistry);
+//
+// RCTApplierBlock  界面处理函数签名 
+//
 
 /**
  * ShadowView tree mirrors RCT view tree. Every node is highly stateful.

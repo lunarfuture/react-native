@@ -32,6 +32,17 @@
 #import "RCTViewManager.h"
 #import "UIView+React.h"
 
+
+
+//
+ // 重点文件啊
+ //
+
+
+
+//
+// 遍历viewA的所有子react view, 执行block 传递ViewA
+//
 static void RCTTraverseViewNodes(id<RCTComponent> view, void (^block)(id<RCTComponent>))
 {
   if (view.reactTag) {
@@ -61,8 +72,14 @@ NSString *const RCTUIManagerRootViewKey = @"RCTUIManagerRootViewKey";
 
 @end
 
+///
+//   对IOS 动画的一个简单包装.
+// 
 @implementation RCTAnimation
 
+//
+// ReactNative 动画类型 转换成 IOS的
+//
 static UIViewAnimationOptions UIViewAnimationOptionsFromRCTAnimationType(RCTAnimationType type)
 {
   switch (type) {
@@ -82,7 +99,10 @@ static UIViewAnimationOptions UIViewAnimationOptionsFromRCTAnimationType(RCTAnim
       return UIViewAnimationOptionCurveEaseInOut;
   }
 }
-
+//
+//  使用config初始化. 
+//  属性: property, delay ,duration ,type,springDamping,initialVelocity,fromValue,toValue
+//
 - (instancetype)initWithDuration:(NSTimeInterval)duration dictionary:(NSDictionary *)config
 {
   if (!config) {
@@ -114,7 +134,9 @@ static UIViewAnimationOptions UIViewAnimationOptionsFromRCTAnimationType(RCTAnim
   }
   return self;
 }
-
+//
+// 执行动画
+// 
 - (void)performAnimations:(void (^)(void))animations
       withCompletionBlock:(void (^)(BOOL completed))completionBlock
 {
@@ -187,6 +209,10 @@ static UIViewAnimationOptions UIViewAnimationOptionsFromRCTAnimationType(RCTAnim
 
 @end
 
+//
+// shadowView 的管理 有自己的线程
+//
+//
 @implementation RCTUIManager
 {
   dispatch_queue_t _shadowQueue;
@@ -284,6 +310,9 @@ extern NSString *RCTBridgeModuleNameForClass(Class cls);
   _shadowViewRegistry = [NSMutableDictionary new];
 
   // Get view managers from bridge
+  //    _bridge.modules.allValues里是所有注册的模块,这里找出所有的RCTViewManager模块,
+  //  然后用他们的viewname为key创建一个componentDatas的集合
+  //
   NSMutableDictionary *componentDataByName = [NSMutableDictionary new];
   for (RCTViewManager *manager in _bridge.modules.allValues) {
     if ([manager isKindOfClass:[RCTViewManager class]]) {
@@ -294,6 +323,7 @@ extern NSString *RCTBridgeModuleNameForClass(Class cls);
 
   _componentDataByName = [componentDataByName copy];
 
+  //辅助功能, 用来让View变大的
   [[NSNotificationCenter defaultCenter] addObserver:self
                                            selector:@selector(didReceiveNewContentSizeMultiplier)
                                                name:RCTAccessibilityManagerDidUpdateMultiplierNotification
@@ -328,6 +358,9 @@ extern NSString *RCTBridgeModuleNameForClass(Class cls);
     if (!_viewRegistry) {
       return;
     }
+    //
+    // 给这个rootView产生对应的shadowView .  似乎每个View都会有个对应的shadowView
+    //
     RCTShadowView *shadowView = [RCTShadowView new];
     shadowView.reactTag = reactTag;
     shadowView.frame = frame;
@@ -348,6 +381,10 @@ extern NSString *RCTBridgeModuleNameForClass(Class cls);
   return _viewRegistry[reactTag];
 }
 
+//
+//  专门用来给 rootView顶层设置sizeFlexibility的.rootView由native代码来通知它高宽设定.
+///
+//
 - (void)setFrame:(CGRect)frame forView:(UIView *)view
 {
   RCTAssertMainThread();
@@ -373,7 +410,7 @@ extern NSString *RCTBridgeModuleNameForClass(Class cls);
     } else {
       rootShadowView.frame = frame;
     }
-
+    //发起一次布局计算
     [rootShadowView updateLayout];
 
     [self batchDidComplete];
@@ -400,6 +437,12 @@ extern NSString *RCTBridgeModuleNameForClass(Class cls);
     [self flushUIBlocks];
   });
 }
+
+
+//  FIXME 
+//  理解陷入深渊..  rootView 到底是个什么样的东西啊???
+//   为什么这么多 我认为莫名其妙 臃肿无用 的逻辑 和代码?
+//
 
 /**
  * Unregisters views from registries
@@ -872,6 +915,12 @@ RCT_EXPORT_METHOD(findSubviewIn:(nonnull NSNumber *)reactTag atPoint:(CGPoint)po
   }];
 }
 
+///
+//  TODO: batchDidComplete是指的是:
+//     react native的 RCTView体系已经成功的pia在 native View上了??
+//  收集要执行的相关调用 , flushUIBlocks调用它们.
+//
+//
 - (void)batchDidComplete
 {
   // Gather blocks to be executed now that all view hierarchy manipulations have
@@ -947,6 +996,9 @@ RCT_EXPORT_METHOD(findSubviewIn:(nonnull NSNumber *)reactTag atPoint:(CGPoint)po
   }
 }
 
+//
+// 回调一个view的坐标数据
+//
 RCT_EXPORT_METHOD(measure:(nonnull NSNumber *)reactTag
                   callback:(RCTResponseSenderBlock)callback)
 {

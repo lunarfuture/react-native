@@ -78,7 +78,10 @@ var render = function(
 ): ?ReactComponent {
   return ReactNativeMount.renderComponent(element, mountInto, callback);
 };
-
+//
+// 这个ReactNative就是全局的React对象
+//
+//
 var ReactNative = {
   hasReactNativeInitialized: false,
   Children: {

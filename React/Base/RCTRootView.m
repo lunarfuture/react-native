@@ -77,6 +77,15 @@ NSString *const RCTContentDidAppearNotification = @"RCTContentDidAppearNotificat
     _loadingViewFadeDuration = 0.25;
     _sizeFlexibility = RCTRootViewSizeFlexibilityNone;
 
+    //
+    //  监听该事件
+    //     监听 RCTJavaScriptDidLoadNotification
+    //     用来执行AppRegistry:runApplication()即执行用户根View的渲染
+    //   监听RCTContentDidAppearNotification
+    //     用来隐藏LoadingView
+    // RCTContentDidAppearNotification通知在
+    //   batchDidComplete时产生, 而这个调用handleBuffer时产生
+    // 
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(javaScriptDidLoad:)
                                                  name:RCTJavaScriptDidLoadNotification
@@ -165,6 +174,9 @@ RCT_NOT_IMPLEMENTED(- (instancetype)initWithCoder:(NSCoder *)aDecoder)
   }
 }
 
+//
+//  
+//
 - (void)javaScriptDidLoad:(NSNotification *)notification
 {
   RCTAssertMainThread();
@@ -305,6 +317,10 @@ RCT_NOT_IMPLEMENTED(- (instancetype)initWithCoder:(NSCoder *)aDecoder)
 RCT_NOT_IMPLEMENTED(-(instancetype)initWithFrame:(CGRect)frame)
 RCT_NOT_IMPLEMENTED(-(instancetype)initWithCoder:(nonnull NSCoder *)aDecoder)
 
+//
+//  TODO 这个函数的调用链  需要找一下 fixME
+//
+//
 - (void)insertReactSubview:(id<RCTComponent>)subview atIndex:(NSInteger)atIndex
 {
   [super insertReactSubview:subview atIndex:atIndex];
@@ -338,7 +354,18 @@ RCT_NOT_IMPLEMENTED(-(instancetype)initWithCoder:(nonnull NSCoder *)aDecoder)
 {
   return _backgroundColor;
 }
-
+//
+//  rootView的reactTag 只会是1,11这样的以1结尾的, rootView代码上看是只有一个, 
+//  new: 实际上rootView不只一个, rn是可以内嵌到native程序中的, 有些view rn化, 有些不,
+//  所以一份代码里可以有很多窗口都是reactNative的rootView,
+//  new2: 可惜似乎不是这样, 见RCTUImanager:setFrame代码,
+//   可见rootView的父窗口依然可以是rootView 那这个rootView到底是个什么含义呢?
+// if (RCTIsReactRootView(view.reactTag)) {
+//     RCTRootView *rootView = (RCTRootView *)[view superview];
+//     if (rootView != nil) {   
+//
+//  但会重新加载
+// 
 - (void)setUp
 {
   /**

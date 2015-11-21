@@ -69,6 +69,12 @@
 #define RCT_CONCAT2(A, B) A ## B
 #define RCT_CONCAT(A, B) RCT_CONCAT2(A, B)
 
+
+
+//
+ //  TODO
+ //  这个宏的使用 还是非常不懂, 有的地方用的莫名其妙的.
+ //
 /**
  * Throw an assertion for unimplemented methods.
  */

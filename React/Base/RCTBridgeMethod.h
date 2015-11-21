@@ -22,6 +22,9 @@ typedef NS_ENUM(NSUInteger, RCTFunctionType) {
 @property (nonatomic, copy, readonly) NSDictionary *profileArgs;
 @property (nonatomic, readonly) RCTFunctionType functionType;
 
+//
+// 执行js基本就靠这个函数了.
+//
 - (void)invokeWithBridge:(RCTBridge *)bridge
                   module:(id)module
                arguments:(NSArray *)arguments;

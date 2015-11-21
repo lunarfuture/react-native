@@ -56,7 +56,7 @@ static NSNumber *RCTGetEventID(id<RCTEvent> event)
   }
   return self;
 }
-
+//这个什么意思???
 RCT_NOT_IMPLEMENTED(- (instancetype)init)
 
 - (uint16_t)coalescingKey
