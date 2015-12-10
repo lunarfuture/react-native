@@ -201,18 +201,7 @@ static UIViewAnimationOptions UIViewAnimationOptionsFromRCTAnimationType(RCTAnim
 
 @end
 
-@interface RCTUIManager ()
-
-// NOTE: these are properties so that they can be accessed by unit tests
-@property (nonatomic, strong) NSMutableDictionary<NSNumber *, RCTShadowView *> *shadowViewRegistry; // RCT thread only
-@property (nonatomic, strong) NSMutableDictionary<NSNumber *, UIView *> *viewRegistry; // Main thread only
-
-@end
-
-//
-// shadowView 的管理 有自己的线程
-//
-//
+ 
 @implementation RCTUIManager
 {
   dispatch_queue_t _shadowQueue;
@@ -224,6 +213,9 @@ static UIViewAnimationOptions UIViewAnimationOptionsFromRCTAnimationType(RCTAnim
   // Animation
   RCTLayoutAnimation *_nextLayoutAnimation; // RCT thread only
   RCTLayoutAnimation *_layoutAnimation; // Main thread only
+
+  NSMutableDictionary<NSNumber *, RCTShadowView *> *_shadowViewRegistry; // RCT thread only
+  NSMutableDictionary<NSNumber *, UIView *> *_viewRegistry; // Main thread only
 
   // Keyed by viewName
   NSDictionary *_componentDataByName;
@@ -239,31 +231,6 @@ RCT_EXPORT_MODULE()
  * Declared in RCTBridge.
  */
 extern NSString *RCTBridgeModuleNameForClass(Class cls);
-
-- (instancetype)init
-{
-  if ((self = [super init])) {
-    const char *queueName = "com.facebook.React.ShadowQueue";
-
-    if ([NSOperation instancesRespondToSelector:@selector(qualityOfService)]) {
-      dispatch_queue_attr_t attr = dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_USER_INTERACTIVE, 0);
-      _shadowQueue = dispatch_queue_create(queueName, attr);
-    } else {
-      _shadowQueue = dispatch_queue_create(queueName, DISPATCH_QUEUE_SERIAL);
-      dispatch_set_target_queue(_shadowQueue, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0));
-    }
-
-    _shadowViewRegistry = [NSMutableDictionary new];
-    _viewRegistry = [NSMutableDictionary new];
-
-    // Internal resources
-    _pendingUIBlocks = [NSMutableArray new];
-    _rootViewTags = [NSMutableSet new];
-
-    _bridgeTransactionListeners = [NSMutableSet new];
-  }
-  return self;
-}
 
 - (void)didReceiveNewContentSizeMultiplier
 {
@@ -302,21 +269,48 @@ extern NSString *RCTBridgeModuleNameForClass(Class cls);
   });
 }
 
+- (NSMutableDictionary<NSNumber *, RCTShadowView *> *)shadowViewRegistry
+{
+  // NOTE: this method only exists so that it can be accessed by unit tests
+  if (!_shadowViewRegistry) {
+    _shadowViewRegistry = [NSMutableDictionary new];
+  }
+  return _shadowViewRegistry;
+}
+
+- (NSMutableDictionary<NSNumber *, UIView *> *)viewRegistry
+{
+  // NOTE: this method only exists so that it can be accessed by unit tests
+  if (!_viewRegistry) {
+    _viewRegistry = [NSMutableDictionary new];
+  }
+  return _viewRegistry;
+}
+
 - (void)setBridge:(RCTBridge *)bridge
 {
   RCTAssert(_bridge == nil, @"Should not re-use same UIIManager instance");
 
   _bridge = bridge;
+
   _shadowViewRegistry = [NSMutableDictionary new];
+  _viewRegistry = [NSMutableDictionary new];
+
+  // Internal resources
+  _pendingUIBlocks = [NSMutableArray new];
+  _rootViewTags = [NSMutableSet new];
+
+  _bridgeTransactionListeners = [NSMutableSet new];
 
   // Get view managers from bridge
   //    _bridge.modules.allValues里是所有注册的模块,这里找出所有的RCTViewManager模块,
   //  然后用他们的viewname为key创建一个componentDatas的集合
   //
   NSMutableDictionary *componentDataByName = [NSMutableDictionary new];
-  for (RCTViewManager *manager in _bridge.modules.allValues) {
-    if ([manager isKindOfClass:[RCTViewManager class]]) {
-      RCTComponentData *componentData = [[RCTComponentData alloc] initWithManager:manager];
+  for (Class moduleClass in _bridge.moduleClasses) {
+    if ([moduleClass isSubclassOfClass:[RCTViewManager class]]) {
+      RCTComponentData *componentData = [[RCTComponentData alloc] initWithManagerClass:moduleClass
+                                                                                bridge:_bridge];
       componentDataByName[componentData.name] = componentData;
     }
   }
@@ -332,6 +326,17 @@ extern NSString *RCTBridgeModuleNameForClass(Class cls);
 
 - (dispatch_queue_t)methodQueue
 {
+  if (!_shadowQueue) {
+    const char *queueName = "com.facebook.React.ShadowQueue";
+
+    if ([NSOperation instancesRespondToSelector:@selector(qualityOfService)]) {
+      dispatch_queue_attr_t attr = dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_USER_INTERACTIVE, 0);
+      _shadowQueue = dispatch_queue_create(queueName, attr);
+    } else {
+      _shadowQueue = dispatch_queue_create(queueName, DISPATCH_QUEUE_SERIAL);
+      dispatch_set_target_queue(_shadowQueue, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0));
+    }
+  }
   return _shadowQueue;
 }
 
@@ -409,9 +414,9 @@ extern NSString *RCTBridgeModuleNameForClass(Class cls);
       rootShadowView.sizeFlexibility = sizeFlexibility;
     } else {
       rootShadowView.frame = frame;
-    }
-    //发起一次布局计算
-    [rootShadowView updateLayout];
+    } 
+
+    [rootShadowView dirtyLayout];//发起一次布局计算 
 
     [self batchDidComplete];
   });
@@ -915,11 +920,15 @@ RCT_EXPORT_METHOD(findSubviewIn:(nonnull NSNumber *)reactTag atPoint:(CGPoint)po
   }];
 }
 
-///
+- (void)partialBatchDidFlush
+{
+  if (self.unsafeFlushUIChangesBeforeBatchEnds) {
+    [self flushUIBlocks];
+  }
+} 
 //  TODO: batchDidComplete是指的是:
 //     react native的 RCTView体系已经成功的pia在 native View上了??
 //  收集要执行的相关调用 , flushUIBlocks调用它们.
-//
 //
 - (void)batchDidComplete
 {
@@ -1147,73 +1156,6 @@ RCT_EXPORT_METHOD(measureViewsInRect:(CGRect)rect
   callback(@[results]);
 }
 
-RCT_EXPORT_METHOD(setMainScrollViewTag:(nonnull NSNumber *)reactTag)
-{
-  [self addUIBlock:^(RCTUIManager *uiManager, NSDictionary<NSNumber *, UIView *> *viewRegistry) {
-    // - There should be at most one designated "main scroll view"
-    // - There should be at most one designated "`nativeMainScrollDelegate`"
-    // - The one designated main scroll view should have the one designated
-    // `nativeMainScrollDelegate` set as its `nativeMainScrollDelegate`.
-    if (uiManager.mainScrollView) {
-      uiManager.mainScrollView.nativeMainScrollDelegate = nil;
-    }
-    id view = viewRegistry[reactTag];
-    if (view) {
-      if ([view conformsToProtocol:@protocol(RCTScrollableProtocol)]) {
-        uiManager.mainScrollView = (id<RCTScrollableProtocol>)view;
-        uiManager.mainScrollView.nativeMainScrollDelegate = uiManager.nativeMainScrollDelegate;
-      } else {
-        RCTLogError(@"Tag #%@ does not conform to RCTScrollableProtocol", reactTag);
-      }
-    } else {
-      uiManager.mainScrollView = nil;
-    }
-  }];
-}
-
-// TODO: we could just pass point property
-RCT_EXPORT_METHOD(scrollTo:(nonnull NSNumber *)reactTag
-                  withOffsetX:(CGFloat)offsetX
-                  offsetY:(CGFloat)offsetY)
-{
-  [self addUIBlock:^(__unused RCTUIManager *uiManager, NSDictionary<NSNumber *, UIView *> *viewRegistry){
-    UIView *view = viewRegistry[reactTag];
-    if ([view conformsToProtocol:@protocol(RCTScrollableProtocol)]) {
-      [(id<RCTScrollableProtocol>)view scrollToOffset:(CGPoint){offsetX, offsetY} animated:YES];
-    } else {
-      RCTLogError(@"tried to scrollToOffset: on non-RCTScrollableProtocol view %@ with tag #%@", view, reactTag);
-    }
-  }];
-}
-
-// TODO: we could just pass point property
-RCT_EXPORT_METHOD(scrollWithoutAnimationTo:(nonnull NSNumber *)reactTag
-                  offsetX:(CGFloat)offsetX
-                  offsetY:(CGFloat)offsetY)
-{
-    [self addUIBlock:^(__unused RCTUIManager *uiManager, NSDictionary<NSNumber *, UIView *> *viewRegistry){
-        UIView *view = viewRegistry[reactTag];
-        if ([view conformsToProtocol:@protocol(RCTScrollableProtocol)]) {
-            [(id<RCTScrollableProtocol>)view scrollToOffset:(CGPoint){offsetX, offsetY} animated:NO];
-        } else {
-            RCTLogError(@"tried to scrollToOffset: on non-RCTScrollableProtocol view %@ with tag #%@", view, reactTag);
-        }
-    }];
-}
-
-RCT_EXPORT_METHOD(zoomToRect:(nonnull NSNumber *)reactTag
-                  withRect:(CGRect)rect)
-{
-  [self addUIBlock:^(__unused RCTUIManager *uiManager, NSDictionary<NSNumber *, UIView *> *viewRegistry){
-    UIView *view = viewRegistry[reactTag];
-    if ([view conformsToProtocol:@protocol(RCTScrollableProtocol)]) {
-      [(id<RCTScrollableProtocol>)view zoomToRect:rect animated:YES];
-    } else {
-      RCTLogError(@"tried to zoomToRect: on non-RCTScrollableProtocol view %@ with tag #%@", view, reactTag);
-    }
-  }];
-}
-
 /**
  * JS sets what *it* considers to be the responder. Later, scroll views can use
  * this in order to determine if scrolling is appropriate.
@@ -1245,12 +1187,11 @@ RCT_EXPORT_METHOD(clearJSResponder)
   [_componentDataByName enumerateKeysAndObjectsUsingBlock:
    ^(NSString *name, RCTComponentData *componentData, __unused BOOL *stop) {
 
-     RCTViewManager *manager = componentData.manager;
      NSMutableDictionary<NSString *, id> *constantsNamespace =
        [NSMutableDictionary dictionaryWithDictionary:allJSConstants[name]];
 
      // Add manager class
-     constantsNamespace[@"Manager"] = RCTBridgeModuleNameForClass([manager class]);
+     constantsNamespace[@"Manager"] = RCTBridgeModuleNameForClass(componentData.managerClass);
 
      // Add native props
      NSDictionary<NSString *, id> *viewConfig = [componentData viewConfig];
@@ -1335,7 +1276,7 @@ static UIView *_jsResponder;
 
 - (RCTUIManager *)uiManager
 {
-  return self.modules[RCTBridgeModuleNameForClass([RCTUIManager class])];
+  return [self moduleForClass:[RCTUIManager class]];
 }
 
 @end

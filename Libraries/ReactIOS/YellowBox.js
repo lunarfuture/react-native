@@ -59,8 +59,21 @@ if (__DEV__) {
   };
 }
 
+/**
+ * Simple function for formatting strings.
+ *
+ * Replaces placeholders with values passed as extra arguments
+ *
+ * @param {string} format the base string
+ * @param ...args the values to insert
+ * @return {string} the replaced string
+ */
+function sprintf(format, ...args) {
+  var index = 0;
+  return format.replace(/%s/g, match => args[index++]);
+}
+
 function updateWarningMap(format, ...args): void {
-  const sprintf = require('sprintf');
   const stringifySafe = require('stringifySafe');
 
   format = String(format);
@@ -109,7 +122,13 @@ const WarningRow = ({count, warning, onPress}) => {
   );
 };
 
-const WarningInspector = ({count, warning, onClose, onDismiss}) => {
+const WarningInspector = ({
+  count,
+  warning,
+  onClose,
+  onDismiss,
+  onDismissAll,
+}) => {
   const ScrollView = require('ScrollView');
   const Text = require('Text');
   const TouchableHighlight = require('TouchableHighlight');
@@ -138,7 +157,16 @@ const WarningInspector = ({count, warning, onClose, onDismiss}) => {
             style={styles.inspectorButton}
             underlayColor="transparent">
             <Text style={styles.inspectorButtonText}>
-              Dismiss Warning
+              Dismiss
+            </Text>
+          </TouchableHighlight>
+          <TouchableHighlight
+            activeOpacity={0.5}
+            onPress={onDismissAll}
+            style={styles.inspectorButton}
+            underlayColor="transparent">
+            <Text style={styles.inspectorButtonText}>
+              Dismiss All
             </Text>
           </TouchableHighlight>
         </View>
@@ -162,9 +190,13 @@ class YellowBox extends React.Component {
     };
     this.dismissWarning = warning => {
       const {inspecting, warningMap} = this.state;
-      warningMap.delete(warning);
+      if (warning) {
+        warningMap.delete(warning);
+      } else {
+        warningMap.clear();
+      }
       this.setState({
-        inspecting: inspecting === warning ? null : inspecting,
+        inspecting: (warning && inspecting !== warning) ? inspecting : null,
         warningMap,
       });
     };
@@ -204,6 +236,7 @@ class YellowBox extends React.Component {
         warning={inspecting}
         onClose={() => this.setState({inspecting: null})}
         onDismiss={() => this.dismissWarning(inspecting)}
+        onDismissAll={() => this.dismissWarning(null)}
       /> :
       null;
 
@@ -267,11 +300,8 @@ var styles = StyleSheet.create({
     bottom: 0,
   },
   inspectorButton: {
+    flex: 1,
     padding: 22,
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
   },
   inspectorButtonText: {
     color: textColor,

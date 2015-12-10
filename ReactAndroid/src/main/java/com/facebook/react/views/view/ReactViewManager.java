@@ -47,7 +47,6 @@ public class ReactViewManager extends ViewGroupManager<ReactViewGroup> {
   };
   private static final int CMD_HOTSPOT_UPDATE = 1;
   private static final int CMD_SET_PRESSED = 2;
-  private static final int[] sLocationBuf = new int[2];
 
   @ReactProp(name = "accessible")
   public void setAccessible(ReactViewGroup view, boolean accessible) {
@@ -62,6 +61,14 @@ public class ReactViewManager extends ViewGroupManager<ReactViewGroup> {
   @ReactProp(name = "borderStyle")
   public void setBorderStyle(ReactViewGroup view, @Nullable String borderStyle) {
     view.setBorderStyle(borderStyle);
+  }
+
+  @ReactProp(name = "elevation")
+  public void setElevation(ReactViewGroup view, float elevation) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+      view.setElevation(PixelUtil.toPixelFromDIP(elevation));
+    }
+    // Do nothing on API < 21
   }
 
   @ReactProp(name = "pointerEvents")
@@ -152,9 +159,8 @@ public class ReactViewManager extends ViewGroupManager<ReactViewGroup> {
               "Illegal number of arguments for 'updateHotspot' command");
         }
         if (Build.VERSION.SDK_INT >= 21) {
-          root.getLocationOnScreen(sLocationBuf);
-          float x = PixelUtil.toPixelFromDIP(args.getDouble(0)) - sLocationBuf[0];
-          float y = PixelUtil.toPixelFromDIP(args.getDouble(1)) - sLocationBuf[1];
+          float x = PixelUtil.toPixelFromDIP(args.getDouble(0));
+          float y = PixelUtil.toPixelFromDIP(args.getDouble(1));
           root.drawableHotspotChanged(x, y);
         }
         break;
